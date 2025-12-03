@@ -5,60 +5,64 @@ export default function OauthCallback() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
   const code = params.get("code");
 
   useEffect(() => {
     if (!code) {
-      navigate("/");
+      setError("No authorization code found.");
+      setLoading(false);
+      setTimeout(() => navigate("/"), 3000);
       return;
     }
 
     const exchangeToken = async () => {
       try {
-        const res = await fetch("http://localhost:5000/auth/github", {
+        const backendUrl =
+          import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+
+        // POST the code to backend to get access token
+        const tokenRes = await fetch(`${backendUrl}/auth/github`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code }),
         });
 
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
+        if (!tokenRes.ok) {
+          throw new Error(`HTTP error! status: ${tokenRes.status}`);
         }
 
-        const data = await res.json();
-        
-        if (data.error) {
-          throw new Error(data.error_description || "OAuth failed");
+        const tokenData = await tokenRes.json();
+        if (tokenData.error) {
+          throw new Error(tokenData.error_description || "OAuth failed");
         }
 
-        const accessToken = data.access_token;
-        
-        // Fetch user info
+        const accessToken = tokenData.access_token;
+
+        // Fetch user info from GitHub API
         const userRes = await fetch("https://api.github.com/user", {
-          headers: { 
+          headers: {
             Authorization: `Bearer ${accessToken}`,
-            Accept: "application/vnd.github.v3+json"
+            Accept: "application/vnd.github.v3+json",
           },
         });
-        
+
         if (!userRes.ok) {
           throw new Error("Failed to fetch user data");
         }
-        
+
         const userData = await userRes.json();
-        
-        // Store token in localStorage (optional)
+
+        // Optional: store token
         localStorage.setItem("github_token", accessToken);
-        
-        // Navigate to profile
-        navigate("/profile", { 
-          state: { user: userData },
-          replace: true // Prevent back navigation to callback
-        });
-        
+
+        // Navigate to profile page with user info
+        navigate("/profile", { state: { user: userData }, replace: true });
       } catch (err) {
         console.error("OAuth error:", err);
         setError(err instanceof Error ? err.message : "Authentication failed");
+        setLoading(false);
         setTimeout(() => navigate("/"), 3000);
       }
     };
@@ -66,22 +70,21 @@ export default function OauthCallback() {
     exchangeToken();
   }, [code, navigate]);
 
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-red-500 mb-4">Error: {error}</div>
-          <p>Redirecting to login...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="text-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-        <p>Completing sign in...</p>
+        {loading && (
+          <div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p>Completing sign in...</p>
+          </div>
+        )}
+        {error && (
+          <div>
+            <div className="text-red-500 mb-4">Error: {error}</div>
+            <p>Redirecting to login...</p>
+          </div>
+        )}
       </div>
     </div>
   );
